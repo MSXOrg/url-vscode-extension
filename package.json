@@ -2,7 +2,7 @@
   "name": "remote-folder-url-button",
   "displayName": "Remote Folder URL Button",
   "description": "Adds an Explorer context action and a lightweight custom view with an inline button next to each folder to open its Git remote (file or folder) URL in the default browser.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "MariusStorhaug",
   "engines": {
     "vscode": "^1.84.0"
