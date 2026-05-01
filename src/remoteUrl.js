@@ -6,8 +6,10 @@
  * @returns {{ base: string, provider: 'github'|'gitlab'|'bitbucket'|'azure'|'unknown', host: string, repoPath: string }}
  */
 function normalizeRemote(remote) {
-    let host = '';
-    let repoPath = '';
+    /** @type {string} */
+    let host;
+    /** @type {string} */
+    let repoPath;
     if (!remote) {
         return { base: '', provider: 'unknown', host: '', repoPath: '' };
     }

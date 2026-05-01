@@ -1,11 +1,11 @@
 {
   "name": "remote-folder-url-button",
   "displayName": "Remote Folder URL Button",
-  "description": "Adds an Explorer context action and a lightweight custom view with an inline button next to each folder to open its Git remote (file or folder) URL in the default browser.",
+  "description": "Adds a context menu action in the Explorer and Source Control views to open the Git remote URL for a file or folder in your default browser.",
   "version": "0.0.0",
   "publisher": "MariusStorhaug",
   "engines": {
-    "vscode": "^1.84.0"
+    "vscode": "^1.118.0"
   },
   "categories": [
     "Other"
@@ -16,114 +16,41 @@
       {
         "command": "remoteFolders.openRemote",
         "title": "Open Remote URL in Browser",
-        "category": "Remote Folders",
-        "icon": {
-          "light": "resources/open-external-light.svg",
-          "dark": "resources/open-external-dark.svg"
-        }
-      },
-      {
-        "command": "remoteFolders.openRemoteFromExplorer",
-        "title": "Open Remote URL in Browser",
-        "category": "Remote Folders",
-        "icon": {
-          "light": "resources/open-external-light.svg",
-          "dark": "resources/open-external-dark.svg"
-        }
-      },
-      {
-        "command": "remoteFolders.refresh",
-        "title": "Refresh",
-        "category": "Remote Folders",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "remoteFolders.openRemoteForActiveFile",
-        "title": "Open Remote URL for Current File/Folder",
         "category": "Remote Folders"
       }
     ],
-    "views": {
-      "explorer": [
-        {
-          "id": "remoteFoldersView",
-          "name": "Remote Folders",
-          "icon": "$(globe)"
-        }
-      ]
-    },
     "menus": {
-      "explorer/context": [
-        {
-          "command": "remoteFolders.openRemoteFromExplorer",
-          "group": "navigation@1",
-          "when": "resourceScheme == file && gitOpenRepositoryCount != 0",
-          "icon": {
-            "light": "resources/open-external-light.svg",
-            "dark": "resources/open-external-dark.svg"
-          }
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "remoteFolders.openRemote",
-          "when": "view == remoteFoldersView && viewItem == rf.folder",
-          "group": "inline@1",
-          "icon": {
-            "light": "resources/open-external-light.svg",
-            "dark": "resources/open-external-dark.svg"
-          }
-        }
-      ],
-      "view/title": [
-        {
-          "command": "remoteFolders.refresh",
-          "when": "view == remoteFoldersView",
-          "group": "navigation"
-        }
-      ],
       "commandPalette": [
         {
-          "command": "remoteFolders.openRemoteForActiveFile",
-          "when": "gitOpenRepositoryCount != 0"
+          "command": "remoteFolders.openRemote",
+          "when": "false"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "remoteFolders.openRemote",
+          "group": "navigation@1",
+          "when": "resourceScheme == file && gitOpenRepositoryCount != 0"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "remoteFolders.openRemote",
+          "group": "navigation@1",
+          "when": "scmProvider == git"
+        }
+      ],
+      "scm/resourceFolder/context": [
+        {
+          "command": "remoteFolders.openRemote",
+          "group": "navigation@1",
+          "when": "scmProvider == git"
         }
       ]
     },
-    "keybindings": [
-      {
-        "command": "remoteFolders.openRemoteFromExplorer",
-        "key": "ctrl+shift+o",
-        "mac": "cmd+shift+o",
-        "when": "filesExplorerFocus && resourceScheme == file"
-      },
-      {
-        "command": "remoteFolders.openRemote",
-        "key": "ctrl+shift+o",
-        "mac": "cmd+shift+o",
-        "when": "focusedView == remoteFoldersView"
-      },
-      {
-        "command": "remoteFolders.openRemoteForActiveFile",
-        "key": "ctrl+alt+o",
-        "mac": "cmd+alt+o"
-      }
-    ],
     "configuration": {
       "title": "Remote Folder URL Button",
       "properties": {
-        "remoteFolders.exclude": {
-          "type": "array",
-          "default": [
-            ".git",
-            ".vscode",
-            "node_modules",
-            "dist",
-            "out",
-            "target",
-            ".idea"
-          ],
-          "description": "Folder names to exclude from the custom view."
-        },
         "remoteFolders.preferBranch": {
           "type": "string",
           "default": "",
@@ -143,8 +70,9 @@
     "publish": "vsce publish"
   },
   "devDependencies": {
-    "@types/vscode": "^1.84.0",
-    "@vscode/vsce": "^3.0.0",
-    "eslint": "^9.0.0"
+    "@eslint/js": "^10.0.1",
+    "@types/vscode": "^1.118.0",
+    "@vscode/vsce": "^3.9.1",
+    "eslint": "^10.3.0"
   }
 }

@@ -97,6 +97,7 @@ jobs:
       github.event.pull_request.merged == false)"
     outputs:
       version: ${{ steps.calc.outputs.version }}
+      package-version: ${{ steps.calc.outputs.package-version }}
       should-release: ${{ steps.calc.outputs.should-release }}
       is-prerelease: ${{ steps.calc.outputs.is-prerelease }}
       pr-number: ${{ steps.calc.outputs.pr-number }}
@@ -134,15 +135,60 @@ jobs:
           PATCH_ARR=("${PATCH_ARR[@]// /}")
           IGNORE_ARR=("${IGNORE_ARR[@]// /}")
 
-          # Get latest stable release version (exclude prereleases)
+          # Helper: query the VS Code Marketplace for a published version of this extension.
+          # Usage: get_marketplace_version <publisher> <ext_name> [stable|any]
+          #   stable (default) - latest version that is NOT marked as a pre-release
+          #   any              - absolute latest version regardless of pre-release flag
+          # Returns the version string (e.g. "1.2.3") or an empty string if not found.
+          get_marketplace_version() {
+            local publisher="$1"
+            local ext_name="$2"
+            local mode="${3:-stable}"
+            local response
+            response=$(curl -s -X POST \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json; api-version=3.0-preview.1" \
+              --data "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"${publisher}.${ext_name}\"}]}],\"flags\":512}" \
+              "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery" 2>/dev/null) || true
+            if [ -z "$response" ]; then echo ""; return; fi
+            if [ "$mode" = "any" ]; then
+              # First version in the list is the most recently published (stable or pre-release)
+              echo "$response" | jq -r '.results[0].extensions[0].versions[0].version // empty' 2>/dev/null || echo ""
+            else
+              # Stable: skip versions flagged as pre-release via the extension property
+              echo "$response" | jq -r '[
+                .results[0].extensions[0].versions[] |
+                select(
+                  (.properties // [] |
+                   map(select(.key == "Microsoft.VisualStudio.Code.PreRelease" and .value == "true")) |
+                   length) == 0
+              ) | .version][0] // empty' 2>/dev/null || echo ""
+            fi
+          }
+
+          # Read publisher and extension name once from package.json (always checked out).
+          PUBLISHER=$(jq -r '.publisher' package.json)
+          EXT_NAME=$(jq -r '.name' package.json)
+
+          # Get latest stable release version (exclude prereleases).
+          # Priority: (1) latest stable GitHub release tag,
+          #           (2) latest stable VS Code Marketplace version,
+          #           (3) 0.0.0 as a last resort.
+          # This ensures repositories published to the Marketplace before GitHub releases
+          # were introduced still calculate version bumps from the real published baseline.
           LATEST_TAG=$(gh release list --exclude-drafts --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease == false)][0].tagName // empty' 2>/dev/null || echo "")
-          if [ -z "$LATEST_TAG" ]; then
-            LATEST_VERSION="0.0.0"
-            echo "No previous stable release found. Starting from 0.0.0"
-          else
-            # Strip version prefix
+          if [ -n "$LATEST_TAG" ]; then
             LATEST_VERSION="${LATEST_TAG#$VERSION_PREFIX}"
             echo "Latest stable release: $LATEST_TAG (version: $LATEST_VERSION)"
+          else
+            MARKETPLACE_STABLE=$(get_marketplace_version "$PUBLISHER" "$EXT_NAME" "stable")
+            if [ -n "$MARKETPLACE_STABLE" ]; then
+              LATEST_VERSION="$MARKETPLACE_STABLE"
+              echo "No GitHub release found. Using VS Code Marketplace stable version as base: $LATEST_VERSION"
+            else
+              LATEST_VERSION="0.0.0"
+              echo "No GitHub release or Marketplace version found. Starting from 0.0.0"
+            fi
           fi
 
           # Parse semver components
@@ -199,6 +245,7 @@ jobs:
                 if [ "$label" = "$ignore" ]; then
                   echo "Ignore label '$label' found. Skipping release."
                   echo "version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
+                  echo "package-version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
                   echo "should-release=false" >> "$GITHUB_OUTPUT"
                   echo "is-prerelease=false" >> "$GITHUB_OUTPUT"
                   echo "pr-number=" >> "$GITHUB_OUTPUT"
@@ -265,6 +312,7 @@ jobs:
             *)
               echo "No version bump determined."
               echo "version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
+              echo "package-version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
               echo "should-release=false" >> "$GITHUB_OUTPUT"
               echo "is-prerelease=false" >> "$GITHUB_OUTPUT"
               echo "pr-number=" >> "$GITHUB_OUTPUT"
@@ -275,6 +323,7 @@ jobs:
           esac
 
           NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          PACKAGE_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 
           # Add prerelease suffix for prerelease builds
           if [ "$IS_PRERELEASE" = "true" ]; then
@@ -285,10 +334,23 @@ jobs:
             EXISTING_COUNT=$(gh release list --json tagName,isPrerelease --jq "[.[] | select(.isPrerelease == true) | select(.tagName | startswith(\"${VERSION_PREFIX}${NEW_VERSION}-${PRERELEASE_ID}\"))] | length" 2>/dev/null || echo "0")
             NEXT_NUM=$((EXISTING_COUNT + 1))
             NEW_VERSION="${NEW_VERSION}-${PRERELEASE_ID}.${NEXT_NUM}"
+            # VS Code Marketplace requires x.y.z format without pre-release identifiers.
+            # Use the absolute latest marketplace version (stable OR prerelease) as the base
+            # and bump its patch by 1. This guarantees each CI push to the PR produces a
+            # version higher than anything already published, avoiding "already exists" errors.
+            MARKETPLACE_LATEST=$(get_marketplace_version "$PUBLISHER" "$EXT_NAME" "any")
+            if [ -n "$MARKETPLACE_LATEST" ]; then
+              IFS='.' read -r MP_MAJ MP_MIN MP_PAT <<< "$MARKETPLACE_LATEST"
+              MP_PAT=$((MP_PAT + 1))
+              PACKAGE_VERSION="${MP_MAJ}.${MP_MIN}.${MP_PAT}"
+              echo "Marketplace latest: $MARKETPLACE_LATEST — using $PACKAGE_VERSION as prerelease package version"
+            fi
+            # If the marketplace query failed, PACKAGE_VERSION keeps the label-bump value
           fi
 
-          echo "Calculated new version: $NEW_VERSION (bump: $BUMP, prerelease: $IS_PRERELEASE)"
+          echo "Calculated new version: $NEW_VERSION (package version: $PACKAGE_VERSION, bump: $BUMP, prerelease: $IS_PRERELEASE)"
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "package-version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
           echo "should-release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
           echo "is-prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
           echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
@@ -311,7 +373,7 @@ jobs:
       - name: Generate metadata in package.json
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.package-version }}
         shell: bash
         run: |
           set -euo pipefail
@@ -375,13 +437,21 @@ jobs:
           node-version: ${{ inputs.node-version }}
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Lint
         run: npm run lint --if-present
 
       - name: Package extension
-        run: npx @vscode/vsce package --no-update-package-json
+        env:
+          IS_PRERELEASE: ${{ needs.version.outputs.is-prerelease }}
+        shell: bash
+        run: |
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            ./node_modules/.bin/vsce package --no-update-package-json --pre-release
+          else
+            ./node_modules/.bin/vsce package --no-update-package-json
+          fi
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -443,6 +513,7 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
           IS_PRERELEASE: ${{ needs.version.outputs.is-prerelease }}
+          npm_config_omit: optional
         shell: bash
         run: |
           if [ "$IS_PRERELEASE" = "true" ]; then

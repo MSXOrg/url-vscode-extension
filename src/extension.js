@@ -1,7 +1,6 @@
 // @ts-check
 const vscode = require('vscode');
 const path = require('path');
-const fs = require('fs').promises;
 const { normalizeRemote, composeFolderUrl, composeFileUrl } = require('./remoteUrl');
 
 /**
@@ -23,8 +22,7 @@ async function getGitApi() {
         if (!gitExt.isActive) {
             await gitExt.activate();
         }
-        const api = gitExt.exports.getAPI(1);
-        return api;
+        return gitExt.exports.getAPI(1);
     } catch {
         return undefined;
     }
@@ -38,7 +36,7 @@ async function getGitApi() {
 function getRepositoryForUri(gitApi, uri) {
     if (!gitApi) return undefined;
     const repos = gitApi.repositories || [];
-    let chosen = undefined;
+    let chosen;
     for (const r of repos) {
         const root = r.rootUri;
         if (uri.fsPath.startsWith(root.fsPath)) {
@@ -58,14 +56,10 @@ function getRepositoryForUri(gitApi, uri) {
 async function detectResourceKind(uri) {
     try {
         const stat = await vscode.workspace.fs.stat(uri);
-        if ((stat.type & vscode.FileType.Directory) !== 0) {
-            return 'directory';
-        }
-        if ((stat.type & vscode.FileType.File) !== 0) {
-            return 'file';
-        }
+        if ((stat.type & vscode.FileType.Directory) !== 0) return 'directory';
+        if ((stat.type & vscode.FileType.File) !== 0) return 'file';
     } catch {
-        // ignore fallthrough
+        // ignore
     }
     return 'unknown';
 }
@@ -100,142 +94,56 @@ async function computeRemoteUrl(uri, hint) {
     const branch = (head && head.name) || (vscode.workspace.getConfiguration('remoteFolders').get('preferBranch') || 'HEAD');
 
     const rel = toPosix(path.relative(repo.rootUri.fsPath, uri.fsPath));
-    const relClean = rel === '' ? '' : rel;
 
     /** @type {'file' | 'directory' | 'unknown'} */
     let kind = hint || 'unknown';
-    if (!kind || kind === 'unknown') {
+    if (kind === 'unknown') {
         kind = await detectResourceKind(uri);
     }
 
-    const treatAsDirectory = kind === 'directory' || relClean === '';
+    const treatAsDirectory = kind === 'directory' || rel === '';
     if (treatAsDirectory) {
-        return composeFolderUrl(info, branch, relClean);
+        return composeFolderUrl(info, branch, rel);
     }
 
-    if (!relClean) {
+    if (!rel) {
         throw new Error('Unable to determine repository-relative path for the selected file.');
     }
 
-    return composeFileUrl(info, branch, relClean);
+    return composeFileUrl(info, branch, rel);
+}
+
+/**
+ * Resolve a URI from any context-menu argument shape (Uri, TreeItem, SCM resource state, etc.)
+ * @param {any} target
+ * @returns {vscode.Uri | undefined}
+ */
+function resolveUri(target) {
+    if (!target) return undefined;
+    if (target instanceof vscode.Uri) return target;
+    if (target.resourceUri instanceof vscode.Uri) return target.resourceUri;
+    if (target.uri instanceof vscode.Uri) return target.uri;
+    return undefined;
 }
 
 /**
  * @param {any} target
  */
 async function openRemoteForTarget(target) {
-    /** @type {vscode.Uri | undefined} */
-    let uri;
-    if (!target) {
-        return;
-    }
-    if (target instanceof vscode.Uri) {
-        uri = target;
-    } else if (target.resourceUri) {
-        uri = target.resourceUri;
-    } else if (target.uri) {
-        uri = target.uri;
-    }
-
+    const uri = resolveUri(target);
     if (!uri) {
         vscode.window.showErrorMessage('Could not determine a URI for this item.');
         return;
     }
 
-    let kind = 'unknown';
+    const kind = await detectResourceKind(uri);
     try {
-        kind = await detectResourceKind(uri);
-        if (kind === 'unknown') {
-            vscode.window.showWarningMessage('Could not determine whether the item is a file or folder. Attempting to open anyway.');
-        }
-    } catch {
-        // ignore and attempt anyway
-    }
-
-    const url = await computeRemoteUrl(uri, /** @type {any} */(kind));
-    await vscode.env.openExternal(vscode.Uri.parse(url));
-    vscode.window.setStatusBarMessage('Opened remote URL: ' + url, 3000);
-}
-
-/** @type {import('vscode').TreeDataProvider<any>} */
-class RemoteFoldersProvider {
-    constructor() {
-        this._onDidChangeTreeData = new vscode.EventEmitter();
-        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
-    }
-
-    refresh() { this._onDidChangeTreeData.fire(); }
-
-    /**
-     * @param {any} element
-     * @returns {Promise<any[]>}
-     */
-    async getChildren(element) {
-        /** @type {readonly vscode.WorkspaceFolder[]} */
-        const folders = vscode.workspace.workspaceFolders || [];
-        const excludes = vscode.workspace.getConfiguration('remoteFolders').get('exclude') || [];
-        const excludeSet = new Set(excludes);
-        if (!element) {
-            return folders.map((/** @type {vscode.WorkspaceFolder} */ f) => ({ uri: f.uri, depth: 0, label: path.basename(f.uri.fsPath) }));
-        }
-        try {
-            /** @type {any[]} */
-            const entries = await fs.readdir(element.uri.fsPath, { withFileTypes: true });
-            const dirs = entries
-                .filter((/** @type {any} */ e) => e.isDirectory())
-                .map((/** @type {any} */ e) => e.name);
-            const filtered = dirs.filter((/** @type {string} */ name) => !excludeSet.has(name));
-            return filtered.map((/** @type {string} */ name) => ({
-                uri: vscode.Uri.file(path.join(element.uri.fsPath, name)),
-                depth: (element.depth || 0) + 1,
-                label: name
-            }));
-        } catch {
-            return [];
-        }
-    }
-
-    /**
-     * @param {any} element
-     * @returns {Promise<vscode.TreeItem>}
-     */
-    async getTreeItem(element) {
-        const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.Collapsed);
-        item.resourceUri = element.uri;
-        item.contextValue = 'rf.folder';
-
-        let remoteUrl = undefined;
-
-        try {
-            const gitApi = await getGitApi();
-            if (gitApi) {
-                const repo = getRepositoryForUri(gitApi, element.uri);
-                if (repo) {
-                    /** @type {Array<{name?: string, fetchUrl?: string, pushUrl?: string}>} */
-                    const remotes = repo.state.remotes || [];
-                    const origin = remotes.find(r => r.name === 'origin') || remotes[0];
-                    if (origin && (origin.fetchUrl || origin.pushUrl)) {
-                        item.description = '🌐';
-                        remoteUrl = await computeRemoteUrl(element.uri, 'directory');
-                    }
-                }
-            }
-        } catch {
-            // Ignore errors
-        }
-
-        if (remoteUrl) {
-            const tooltip = new vscode.MarkdownString();
-            tooltip.isTrusted = true;
-            tooltip.appendMarkdown(`\`${toPosix(element.uri.fsPath)}\``);
-            tooltip.appendMarkdown(`\n\n[Open remote folder](${remoteUrl})`);
-            tooltip.appendMarkdown('\n\nUse the inline globe button to open in your browser.');
-            item.tooltip = tooltip;
-        } else {
-            item.tooltip = element.uri.fsPath;
-        }
-
-        return item;
+        const url = await computeRemoteUrl(uri, kind);
+        await vscode.env.openExternal(vscode.Uri.parse(url));
+        vscode.window.setStatusBarMessage('Opened remote URL: ' + url, 3000);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(message);
     }
 }
 
@@ -243,59 +151,18 @@ class RemoteFoldersProvider {
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
-    const provider = new RemoteFoldersProvider();
-
-    context.subscriptions.push(
-        vscode.window.registerTreeDataProvider('remoteFoldersView', provider)
-    );
-
     context.subscriptions.push(
         vscode.commands.registerCommand('remoteFolders.openRemote',
-            /** @param {any} arg */
-            async (arg) => {
-                openRemoteForTarget(arg);
-            })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('remoteFolders.openRemoteFromExplorer',
-            /** @param {any} uri @param {any[]} [selectedUris] */
-            async (uri, selectedUris) => {
-                if (Array.isArray(selectedUris) && selectedUris.length > 1) {
-                    for (const u of selectedUris) {
-                        await openRemoteForTarget(u);
+            /** @param {any} arg @param {any[]} [selected] */
+            async (arg, selected) => {
+                if (Array.isArray(selected) && selected.length > 1) {
+                    for (const item of selected) {
+                        await openRemoteForTarget(item);
                     }
                 } else {
-                    await openRemoteForTarget(uri);
+                    await openRemoteForTarget(arg);
                 }
             })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('remoteFolders.refresh', () => {
-            provider.refresh();
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('remoteFolders.openRemoteForActiveFile', async () => {
-            const activeEditor = vscode.window.activeTextEditor;
-            let targetUri;
-
-            if (activeEditor) {
-                targetUri = activeEditor.document.uri;
-            } else {
-                const workspaceFolders = vscode.workspace.workspaceFolders;
-                if (workspaceFolders && workspaceFolders.length > 0) {
-                    targetUri = workspaceFolders[0].uri;
-                } else {
-                    vscode.window.showErrorMessage('No active file or workspace folder found.');
-                    return;
-                }
-            }
-
-            await openRemoteForTarget(targetUri);
-        })
     );
 }
 
