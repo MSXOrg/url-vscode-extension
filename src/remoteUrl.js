@@ -47,8 +47,8 @@ function normalizeRemote(remote) {
     }
 
     // Handle SSH scp-like: git@host:owner/repo.git
-    const scpLike = /^(?:.+@)?([^:\/]+):(.+)$/;
-    const sshProto = /^ssh:\/\/(?:.+@)?([^\/:]+)[:\/](.+)$/i;
+    const scpLike = /^(?:.+@)?([^:/]+):(.+)$/;
+    const sshProto = /^ssh:\/\/(?:.+@)?([^/:]+)[:/](.+)$/i;
 
     const scpMatch = scpLike.exec(remote);
     if (scpMatch) {

@@ -3,4 +3,6 @@
 .github/**
 node_modules/**
 .gitignore
+eslint.config.js
+package-lock.json
 *.vsix

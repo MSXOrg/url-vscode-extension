@@ -190,7 +190,7 @@ class RemoteFoldersProvider {
                 depth: (element.depth || 0) + 1,
                 label: name
             }));
-        } catch (e) {
+        } catch {
             return [];
         }
     }
