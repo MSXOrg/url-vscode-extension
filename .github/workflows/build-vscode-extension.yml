@@ -381,7 +381,15 @@ jobs:
         run: npm run lint --if-present
 
       - name: Package extension
-        run: npx @vscode/vsce package --no-update-package-json
+        env:
+          IS_PRERELEASE: ${{ needs.version.outputs.is-prerelease }}
+        shell: bash
+        run: |
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            npx @vscode/vsce package --no-update-package-json --pre-release
+          else
+            npx @vscode/vsce package --no-update-package-json
+          fi
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
