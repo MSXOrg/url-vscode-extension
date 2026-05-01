@@ -28,6 +28,43 @@ jobs:
       - name: Package extension
         run: npx vsce package
 
+      - name: Verify VSIX contents
+        run: |
+          VSIX_FILE=$(ls *.vsix)
+          echo "Verifying VSIX: $VSIX_FILE"
+
+          if [ ! -s "$VSIX_FILE" ]; then
+            echo "::error::VSIX file is missing or empty"
+            exit 1
+          fi
+
+          CONTENTS=$(unzip -l "$VSIX_FILE")
+          echo "$CONTENTS"
+
+          EXPECTED_FILES=(
+            "extension/src/extension.js"
+            "extension/package.json"
+            "extension/src/remoteUrl.js"
+            "extension/resources/"
+          )
+
+          MISSING=()
+          for file in "${EXPECTED_FILES[@]}"; do
+            if ! echo "$CONTENTS" | grep -q "$file"; then
+              MISSING+=("$file")
+            fi
+          done
+
+          if [ ${#MISSING[@]} -ne 0 ]; then
+            echo "::error::VSIX is missing expected files:"
+            for file in "${MISSING[@]}"; do
+              echo "  - $file"
+            done
+            exit 1
+          fi
+
+          echo "All expected files found in VSIX package."
+
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
