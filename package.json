@@ -39,6 +39,13 @@
           "group": "navigation@1",
           "when": "scmProvider == git"
         }
+      ],
+      "scm/resourceFolder/context": [
+        {
+          "command": "remoteFolders.openRemote",
+          "group": "navigation@1",
+          "when": "scmProvider == git"
+        }
       ]
     },
     "configuration": {
