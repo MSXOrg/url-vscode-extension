@@ -68,11 +68,7 @@
         {
           "command": "remoteFolders.openRemote",
           "when": "view == remoteFoldersView && viewItem == rf.folder",
-          "group": "inline@1",
-          "icon": {
-            "light": "resources/open-external-light.svg",
-            "dark": "resources/open-external-dark.svg"
-          }
+          "group": "navigation@1"
         }
       ],
       "view/title": [
