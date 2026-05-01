@@ -37,8 +37,14 @@ npm run package
 
 The GitHub Actions workflow automatically:
 
-1. **Builds and lints** on every push and PR to `main`
-2. **Publishes** to the VS Code Marketplace on push to `main`
+1. **Calculates the version** from PR labels and existing releases (no manual version bumps needed)
+2. **Generates metadata** (version, repository URL, license) in `package.json` at build time
+3. **Builds, lints, and packages** the VSIX on every push and PR to `main`
+4. **Publishes prereleases** to the Marketplace when a PR has the `prerelease` label
+5. **Publishes stable releases** and creates GitHub Releases on merge to `main`
+6. **Cleans up prereleases** on merge or when a PR is abandoned
+
+Version bumps are controlled by PR labels: `major`/`breaking`, `minor`/`feature`, `patch`/`fix`. If no label is set, auto-patching applies. Use `NoRelease` to skip releasing.
 
 The publish step requires a `VSCE_PAT` repository secret containing a Visual Studio Marketplace Personal Access Token.
 

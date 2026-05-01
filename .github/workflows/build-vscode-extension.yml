@@ -1,0 +1,533 @@
+name: Build VS Code Extension
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version to use for building.
+        type: number
+        required: false
+        default: 22
+      auto-patching:
+        description: Automatically create a patch release if no version label is present.
+        type: boolean
+        required: false
+        default: true
+      version-prefix:
+        description: Prefix for version tags (e.g., "v" produces "v1.0.0").
+        type: string
+        required: false
+        default: 'v'
+      major-labels:
+        description: Comma-separated list of PR labels that trigger a major version bump.
+        type: string
+        required: false
+        default: 'major, breaking'
+      minor-labels:
+        description: Comma-separated list of PR labels that trigger a minor version bump.
+        type: string
+        required: false
+        default: 'minor, feature'
+      patch-labels:
+        description: Comma-separated list of PR labels that trigger a patch version bump.
+        type: string
+        required: false
+        default: 'patch, fix'
+      ignore-labels:
+        description: Comma-separated list of PR labels that prevent a release from being
+          created.
+        type: string
+        required: false
+        default: 'NoRelease'
+      publish:
+        description: Whether to publish the extension to the VS Code Marketplace on release.
+        type: boolean
+        required: false
+        default: true
+    secrets:
+      VSCE_PAT:
+        description: Personal Access Token for publishing to the VS Code Marketplace.
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup-prereleases:
+    name: Cleanup Prereleases (Abandoned PR)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' &&
+      github.event.pull_request.merged == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Delete prereleases for this branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_PREFIX: ${{ inputs.version-prefix }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BRANCH_NAME="${{ github.head_ref }}"
+          PRERELEASE_ID=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9]/-/g')
+
+          echo "Cleaning up prereleases for abandoned branch: $BRANCH_NAME (id: $PRERELEASE_ID)"
+
+          PRERELEASES=$(gh release list --json tagName,isPrerelease --jq ".[] | select(.isPrerelease == true) | select(.tagName | contains(\"$PRERELEASE_ID\")) | .tagName" 2>/dev/null || echo "")
+
+          if [ -z "$PRERELEASES" ]; then
+            echo "No prereleases found for this branch."
+            exit 0
+          fi
+
+          while IFS= read -r tag; do
+            echo "Deleting prerelease: $tag"
+            gh release delete "$tag" --cleanup-tag --yes || true
+          done <<< "$PRERELEASES"
+
+          echo "Prerelease cleanup complete."
+
+  version:
+    name: Calculate Version
+    runs-on: ubuntu-latest
+    if: "!(github.event_name == 'pull_request' && github.event.action == 'closed' &&
+      github.event.pull_request.merged == false)"
+    outputs:
+      version: ${{ steps.calc.outputs.version }}
+      should-release: ${{ steps.calc.outputs.should-release }}
+      is-prerelease: ${{ steps.calc.outputs.is-prerelease }}
+      pr-number: ${{ steps.calc.outputs.pr-number }}
+      pr-title: ${{ steps.calc.outputs.pr-title }}
+      pr-body: ${{ steps.calc.outputs.pr-body }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate version from labels and releases
+        id: calc
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAJOR_LABELS: ${{ inputs.major-labels }}
+          MINOR_LABELS: ${{ inputs.minor-labels }}
+          PATCH_LABELS: ${{ inputs.patch-labels }}
+          IGNORE_LABELS: ${{ inputs.ignore-labels }}
+          AUTO_PATCHING: ${{ inputs.auto-patching }}
+          VERSION_PREFIX: ${{ inputs.version-prefix }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Parse label lists
+          IFS=',' read -ra MAJOR_ARR <<< "$MAJOR_LABELS"
+          IFS=',' read -ra MINOR_ARR <<< "$MINOR_LABELS"
+          IFS=',' read -ra PATCH_ARR <<< "$PATCH_LABELS"
+          IFS=',' read -ra IGNORE_ARR <<< "$IGNORE_LABELS"
+
+          # Trim whitespace from arrays
+          MAJOR_ARR=("${MAJOR_ARR[@]// /}")
+          MINOR_ARR=("${MINOR_ARR[@]// /}")
+          PATCH_ARR=("${PATCH_ARR[@]// /}")
+          IGNORE_ARR=("${IGNORE_ARR[@]// /}")
+
+          # Get latest stable release version (exclude prereleases)
+          LATEST_TAG=$(gh release list --exclude-drafts --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease == false)][0].tagName // empty' 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_VERSION="0.0.0"
+            echo "No previous stable release found. Starting from 0.0.0"
+          else
+            # Strip version prefix
+            LATEST_VERSION="${LATEST_TAG#$VERSION_PREFIX}"
+            echo "Latest stable release: $LATEST_TAG (version: $LATEST_VERSION)"
+          fi
+
+          # Parse semver components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+          MAJOR=${MAJOR:-0}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+
+          # Initialize outputs
+          SHOULD_RELEASE="false"
+          IS_PRERELEASE="false"
+          BUMP=""
+          PR_NUMBER=""
+          PR_TITLE=""
+          PR_BODY=""
+          HAS_PRERELEASE_LABEL="false"
+
+          # --- Determine context and extract PR info ---
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            PR_TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title' 2>/dev/null || echo "")
+            PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body // empty' 2>/dev/null || echo "")
+            PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/${{ github.event.repository.default_branch }}" ]; then
+            # Find the merged PR for this push
+            MERGE_COMMIT="${{ github.sha }}"
+            PR_NUMBER=$(gh pr list --state merged --json number,mergeCommit --jq ".[] | select(.mergeCommit.oid == \"$MERGE_COMMIT\") | .number" 2>/dev/null || echo "")
+
+            if [ -z "$PR_NUMBER" ]; then
+              PR_NUMBER=$(gh pr list --state merged --limit 5 --base "${{ github.event.repository.default_branch }}" --json number,mergedAt --jq '.[0].number' 2>/dev/null || echo "")
+            fi
+
+            if [ -n "$PR_NUMBER" ]; then
+              PR_TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title' 2>/dev/null || echo "")
+              PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body // empty' 2>/dev/null || echo "")
+              PR_LABELS=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+            else
+              echo "Could not find merged PR for this push."
+              PR_LABELS=""
+            fi
+
+            SHOULD_RELEASE="true"
+          else
+            # workflow_dispatch or other triggers - just build with current+1 patch
+            BUMP="patch"
+          fi
+
+          # --- Check labels ---
+          if [ -n "$PR_LABELS" ]; then
+            # Check for ignore labels
+            for label in $PR_LABELS; do
+              for ignore in "${IGNORE_ARR[@]}"; do
+                if [ "$label" = "$ignore" ]; then
+                  echo "Ignore label '$label' found. Skipping release."
+                  echo "version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
+                  echo "should-release=false" >> "$GITHUB_OUTPUT"
+                  echo "is-prerelease=false" >> "$GITHUB_OUTPUT"
+                  echo "pr-number=" >> "$GITHUB_OUTPUT"
+                  echo "pr-title=" >> "$GITHUB_OUTPUT"
+                  echo "pr-body=" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+              done
+            done
+
+            # Check for prerelease label
+            for label in $PR_LABELS; do
+              if [ "$label" = "prerelease" ]; then
+                HAS_PRERELEASE_LABEL="true"
+                break
+              fi
+            done
+
+            # Determine bump type (highest wins: major > minor > patch)
+            for label in $PR_LABELS; do
+              for major in "${MAJOR_ARR[@]}"; do
+                if [ "$label" = "$major" ]; then BUMP="major"; break 2; fi
+              done
+            done
+            if [ -z "$BUMP" ]; then
+              for label in $PR_LABELS; do
+                for minor in "${MINOR_ARR[@]}"; do
+                  if [ "$label" = "$minor" ]; then BUMP="minor"; break 2; fi
+                done
+              done
+            fi
+            if [ -z "$BUMP" ]; then
+              for label in $PR_LABELS; do
+                for patch in "${PATCH_ARR[@]}"; do
+                  if [ "$label" = "$patch" ]; then BUMP="patch"; break 2; fi
+                done
+              done
+            fi
+            if [ -z "$BUMP" ] && [ "$AUTO_PATCHING" = "true" ]; then
+              BUMP="patch"
+            fi
+          fi
+
+          # For PRs with prerelease label, enable publishing
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "$HAS_PRERELEASE_LABEL" = "true" ]; then
+            SHOULD_RELEASE="true"
+            IS_PRERELEASE="true"
+          fi
+
+          # --- Apply version bump ---
+          case "$BUMP" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+            *)
+              echo "No version bump determined."
+              echo "version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
+              echo "should-release=false" >> "$GITHUB_OUTPUT"
+              echo "is-prerelease=false" >> "$GITHUB_OUTPUT"
+              echo "pr-number=" >> "$GITHUB_OUTPUT"
+              echo "pr-title=" >> "$GITHUB_OUTPUT"
+              echo "pr-body=" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          # Add prerelease suffix for prerelease builds
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            # Use branch name sanitized as prerelease identifier
+            BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
+            PRERELEASE_ID=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9]/-/g')
+            # Count existing prereleases for this version to increment
+            EXISTING_COUNT=$(gh release list --json tagName,isPrerelease --jq "[.[] | select(.isPrerelease == true) | select(.tagName | startswith(\"${VERSION_PREFIX}${NEW_VERSION}-${PRERELEASE_ID}\"))] | length" 2>/dev/null || echo "0")
+            NEXT_NUM=$((EXISTING_COUNT + 1))
+            NEW_VERSION="${NEW_VERSION}-${PRERELEASE_ID}.${NEXT_NUM}"
+          fi
+
+          echo "Calculated new version: $NEW_VERSION (bump: $BUMP, prerelease: $IS_PRERELEASE)"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "should-release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "is-prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          # Use delimiter for multiline PR body
+          echo "pr-title=$PR_TITLE" >> "$GITHUB_OUTPUT"
+          {
+            echo "pr-body<<PREOF"
+            echo "$PR_BODY"
+            echo "PREOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate metadata in package.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Generating metadata for version: $VERSION"
+
+          # Fetch repo info from GitHub API
+          REPO_INFO=$(gh repo view --json name,description,url,licenseInfo,owner)
+          REPO_NAME=$(echo "$REPO_INFO" | jq -r '.name')
+          REPO_DESC=$(echo "$REPO_INFO" | jq -r '.description // empty')
+          REPO_URL=$(echo "$REPO_INFO" | jq -r '.url')
+          LICENSE_KEY=$(echo "$REPO_INFO" | jq -r '.licenseInfo.key // "MIT"')
+          OWNER=$(echo "$REPO_INFO" | jq -r '.owner.login')
+
+          # Map SPDX license identifiers
+          case "$LICENSE_KEY" in
+            mit) LICENSE_SPDX="MIT" ;;
+            apache-2.0) LICENSE_SPDX="Apache-2.0" ;;
+            gpl-3.0) LICENSE_SPDX="GPL-3.0" ;;
+            gpl-2.0) LICENSE_SPDX="GPL-2.0" ;;
+            bsd-2-clause) LICENSE_SPDX="BSD-2-Clause" ;;
+            bsd-3-clause) LICENSE_SPDX="BSD-3-Clause" ;;
+            isc) LICENSE_SPDX="ISC" ;;
+            mpl-2.0) LICENSE_SPDX="MPL-2.0" ;;
+            lgpl-3.0) LICENSE_SPDX="LGPL-3.0" ;;
+            unlicense) LICENSE_SPDX="Unlicense" ;;
+            *) LICENSE_SPDX="$LICENSE_KEY" ;;
+          esac
+
+          echo "  Repository: $REPO_URL"
+          echo "  License: $LICENSE_SPDX"
+          echo "  Description: $REPO_DESC"
+
+          # Update package.json with computed metadata
+          TEMP=$(mktemp)
+          jq --arg version "$VERSION" \
+             --arg repoUrl "${REPO_URL}.git" \
+             --arg license "$LICENSE_SPDX" \
+             --arg homepage "$REPO_URL" \
+             --arg bugsUrl "${REPO_URL}/issues" \
+            '
+              .version = $version |
+              .repository = { "type": "git", "url": $repoUrl } |
+              .license = $license |
+              .homepage = $homepage |
+              .bugs = { "url": $bugsUrl }
+            ' package.json > "$TEMP"
+
+          # Only update description if repo has one and package.json doesn't already have one set
+          if [ -n "$REPO_DESC" ]; then
+            jq --arg desc "$REPO_DESC" '.description //= $desc' "$TEMP" > "${TEMP}.2" && mv "${TEMP}.2" "$TEMP"
+          fi
+
+          mv "$TEMP" package.json
+          echo "Updated package.json:"
+          jq '{version, repository, license, homepage, bugs, description}' package.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Package extension
+        run: npx @vscode/vsce package --no-update-package-json
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: '*.vsix'
+
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vsix
+
+      - name: Verify VSIX contents
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VSIX_FILE=$(ls *.vsix)
+          echo "Verifying VSIX: $VSIX_FILE"
+
+          if [ ! -s "$VSIX_FILE" ]; then
+            echo "::error::VSIX file is missing or empty"
+            exit 1
+          fi
+
+          # Verify it's a valid zip and contains package.json (required by all extensions)
+          CONTENTS=$(unzip -l "$VSIX_FILE")
+          echo "$CONTENTS"
+
+          if ! echo "$CONTENTS" | grep -q "extension/package.json"; then
+            echo "::error::VSIX is missing extension/package.json - not a valid VS Code extension package"
+            exit 1
+          fi
+
+          echo "VSIX package is valid."
+
+  publish:
+    name: Publish
+    needs: [ version, build, test ]
+    runs-on: ubuntu-latest
+    if: needs.version.outputs.should-release == 'true' && inputs.publish
+    steps:
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vsix
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          IS_PRERELEASE: ${{ needs.version.outputs.is-prerelease }}
+        shell: bash
+        run: |
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            npx @vscode/vsce publish --packagePath *.vsix --pre-release
+          else
+            npx @vscode/vsce publish --packagePath *.vsix
+          fi
+
+  release:
+    name: Create Release
+    needs: [ version, publish ]
+    runs-on: ubuntu-latest
+    if: needs.version.outputs.should-release == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vsix
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          VERSION_PREFIX: ${{ inputs.version-prefix }}
+          IS_PRERELEASE: ${{ needs.version.outputs.is-prerelease }}
+          PR_TITLE: ${{ needs.version.outputs.pr-title }}
+          PR_BODY: ${{ needs.version.outputs.pr-body }}
+          PR_NUMBER: ${{ needs.version.outputs.pr-number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${VERSION_PREFIX}${VERSION}"
+          VSIX_FILE=$(ls *.vsix)
+
+          # Build release notes from PR title and body
+          NOTES=""
+          if [ -n "$PR_TITLE" ] && [ -n "$PR_NUMBER" ]; then
+            NOTES="# ${PR_TITLE} (#${PR_NUMBER})"
+            if [ -n "$PR_BODY" ]; then
+              NOTES="${NOTES}
+
+          ${PR_BODY}"
+            fi
+          fi
+
+          echo "Creating release: $TAG (prerelease: $IS_PRERELEASE)"
+
+          RELEASE_ARGS=("release" "create" "$TAG" "--title" "$TAG" "$VSIX_FILE")
+
+          if [ -n "$NOTES" ]; then
+            RELEASE_ARGS+=("--notes" "$NOTES")
+          else
+            RELEASE_ARGS+=("--generate-notes")
+          fi
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            RELEASE_ARGS+=("--prerelease")
+          fi
+
+          gh "${RELEASE_ARGS[@]}"
+
+      - name: Cleanup prereleases
+        if: needs.version.outputs.is-prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_PREFIX: ${{ inputs.version-prefix }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Cleaning up prereleases..."
+          PRERELEASES=$(gh release list --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true) | .tagName' 2>/dev/null || echo "")
+
+          if [ -z "$PRERELEASES" ]; then
+            echo "No prereleases to clean up."
+            exit 0
+          fi
+
+          while IFS= read -r tag; do
+            echo "Deleting prerelease: $tag"
+            gh release delete "$tag" --cleanup-tag --yes || true
+          done <<< "$PRERELEASES"
+
+          echo "Prerelease cleanup complete."
