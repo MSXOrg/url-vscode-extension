@@ -289,6 +289,10 @@ jobs:
             EXISTING_COUNT=$(gh release list --json tagName,isPrerelease --jq "[.[] | select(.isPrerelease == true) | select(.tagName | startswith(\"${VERSION_PREFIX}${NEW_VERSION}-${PRERELEASE_ID}\"))] | length" 2>/dev/null || echo "0")
             NEXT_NUM=$((EXISTING_COUNT + 1))
             NEW_VERSION="${NEW_VERSION}-${PRERELEASE_ID}.${NEXT_NUM}"
+            # VS Code Marketplace requires x.y.z format without pre-release identifiers.
+            # Use the workflow run number as the patch to guarantee a unique, monotonically
+            # increasing version for each prerelease CI run, avoiding "already exists" errors.
+            PACKAGE_VERSION="${MAJOR}.${MINOR}.${GITHUB_RUN_NUMBER}"
           fi
 
           echo "Calculated new version: $NEW_VERSION (package version: $PACKAGE_VERSION, bump: $BUMP, prerelease: $IS_PRERELEASE)"
