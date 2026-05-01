@@ -97,6 +97,7 @@ jobs:
       github.event.pull_request.merged == false)"
     outputs:
       version: ${{ steps.calc.outputs.version }}
+      package-version: ${{ steps.calc.outputs.package-version }}
       should-release: ${{ steps.calc.outputs.should-release }}
       is-prerelease: ${{ steps.calc.outputs.is-prerelease }}
       pr-number: ${{ steps.calc.outputs.pr-number }}
@@ -199,6 +200,7 @@ jobs:
                 if [ "$label" = "$ignore" ]; then
                   echo "Ignore label '$label' found. Skipping release."
                   echo "version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
+                  echo "package-version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
                   echo "should-release=false" >> "$GITHUB_OUTPUT"
                   echo "is-prerelease=false" >> "$GITHUB_OUTPUT"
                   echo "pr-number=" >> "$GITHUB_OUTPUT"
@@ -265,6 +267,7 @@ jobs:
             *)
               echo "No version bump determined."
               echo "version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
+              echo "package-version=${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_OUTPUT"
               echo "should-release=false" >> "$GITHUB_OUTPUT"
               echo "is-prerelease=false" >> "$GITHUB_OUTPUT"
               echo "pr-number=" >> "$GITHUB_OUTPUT"
@@ -275,6 +278,7 @@ jobs:
           esac
 
           NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          PACKAGE_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 
           # Add prerelease suffix for prerelease builds
           if [ "$IS_PRERELEASE" = "true" ]; then
@@ -287,8 +291,9 @@ jobs:
             NEW_VERSION="${NEW_VERSION}-${PRERELEASE_ID}.${NEXT_NUM}"
           fi
 
-          echo "Calculated new version: $NEW_VERSION (bump: $BUMP, prerelease: $IS_PRERELEASE)"
+          echo "Calculated new version: $NEW_VERSION (package version: $PACKAGE_VERSION, bump: $BUMP, prerelease: $IS_PRERELEASE)"
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "package-version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
           echo "should-release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
           echo "is-prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
           echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
@@ -311,7 +316,7 @@ jobs:
       - name: Generate metadata in package.json
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.package-version }}
         shell: bash
         run: |
           set -euo pipefail
