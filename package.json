@@ -57,11 +57,7 @@
         {
           "command": "remoteFolders.openRemoteFromExplorer",
           "group": "navigation@1",
-          "when": "resourceScheme == file && gitOpenRepositoryCount != 0",
-          "icon": {
-            "light": "resources/open-external-light.svg",
-            "dark": "resources/open-external-dark.svg"
-          }
+          "when": "resourceScheme == file && gitOpenRepositoryCount != 0"
         }
       ],
       "view/item/context": [
