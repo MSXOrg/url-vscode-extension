@@ -375,7 +375,7 @@ jobs:
           node-version: ${{ inputs.node-version }}
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Lint
         run: npm run lint --if-present
@@ -386,9 +386,9 @@ jobs:
         shell: bash
         run: |
           if [ "$IS_PRERELEASE" = "true" ]; then
-            npx @vscode/vsce package --no-update-package-json --pre-release
+            ./node_modules/.bin/vsce package --no-update-package-json --pre-release
           else
-            npx @vscode/vsce package --no-update-package-json
+            ./node_modules/.bin/vsce package --no-update-package-json
           fi
 
       - name: Upload VSIX artifact
@@ -451,6 +451,7 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
           IS_PRERELEASE: ${{ needs.version.outputs.is-prerelease }}
+          npm_config_omit: optional
         shell: bash
         run: |
           if [ "$IS_PRERELEASE" = "true" ]; then
