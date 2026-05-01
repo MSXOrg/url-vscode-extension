@@ -5,7 +5,7 @@
   "version": "0.0.0",
   "publisher": "MariusStorhaug",
   "engines": {
-    "vscode": "^1.84.0"
+    "vscode": "^1.118.0"
   },
   "categories": [
     "Other"
