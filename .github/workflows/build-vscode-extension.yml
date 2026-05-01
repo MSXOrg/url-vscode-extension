@@ -135,37 +135,56 @@ jobs:
           PATCH_ARR=("${PATCH_ARR[@]// /}")
           IGNORE_ARR=("${IGNORE_ARR[@]// /}")
 
-          # Helper: query the VS Code Marketplace for the latest published version of this extension.
+          # Helper: query the VS Code Marketplace for a published version of this extension.
+          # Usage: get_marketplace_version <publisher> <ext_name> [stable|any]
+          #   stable (default) - latest version that is NOT marked as a pre-release
+          #   any              - absolute latest version regardless of pre-release flag
           # Returns the version string (e.g. "1.2.3") or an empty string if not found.
           get_marketplace_version() {
             local publisher="$1"
             local ext_name="$2"
-            curl -s -X POST \
+            local mode="${3:-stable}"
+            local response
+            response=$(curl -s -X POST \
               -H "Content-Type: application/json" \
               -H "Accept: application/json; api-version=3.0-preview.1" \
               --data "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"${publisher}.${ext_name}\"}]}],\"flags\":512}" \
-              "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery" \
-              | jq -r '.results[0].extensions[0].versions[0].version // empty' 2>/dev/null \
-              || echo ""
+              "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery" 2>/dev/null) || true
+            if [ -z "$response" ]; then echo ""; return; fi
+            if [ "$mode" = "any" ]; then
+              # First version in the list is the most recently published (stable or pre-release)
+              echo "$response" | jq -r '.results[0].extensions[0].versions[0].version // empty' 2>/dev/null || echo ""
+            else
+              # Stable: skip versions flagged as pre-release via the extension property
+              echo "$response" | jq -r '[
+                .results[0].extensions[0].versions[] |
+                select(
+                  (.properties // [] |
+                   map(select(.key == "Microsoft.VisualStudio.Code.PreRelease" and .value == "true")) |
+                   length) == 0
+              ) | .version][0] // empty' 2>/dev/null || echo ""
+            fi
           }
 
+          # Read publisher and extension name once from package.json (always checked out).
+          PUBLISHER=$(jq -r '.publisher' package.json)
+          EXT_NAME=$(jq -r '.name' package.json)
+
           # Get latest stable release version (exclude prereleases).
-          # Falls back to the VS Code Marketplace published version so that repositories
-          # which were published before GitHub releases were introduced still calculate
-          # version bumps relative to the real published baseline, not 0.0.0.
+          # Priority: (1) latest stable GitHub release tag,
+          #           (2) latest stable VS Code Marketplace version,
+          #           (3) 0.0.0 as a last resort.
+          # This ensures repositories published to the Marketplace before GitHub releases
+          # were introduced still calculate version bumps from the real published baseline.
           LATEST_TAG=$(gh release list --exclude-drafts --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease == false)][0].tagName // empty' 2>/dev/null || echo "")
           if [ -n "$LATEST_TAG" ]; then
-            # Strip version prefix
             LATEST_VERSION="${LATEST_TAG#$VERSION_PREFIX}"
             echo "Latest stable release: $LATEST_TAG (version: $LATEST_VERSION)"
           else
-            # No GitHub release — try the VS Code Marketplace
-            PUBLISHER=$(jq -r '.publisher' package.json)
-            EXT_NAME=$(jq -r '.name' package.json)
-            MARKETPLACE_VERSION=$(get_marketplace_version "$PUBLISHER" "$EXT_NAME")
-            if [ -n "$MARKETPLACE_VERSION" ]; then
-              LATEST_VERSION="$MARKETPLACE_VERSION"
-              echo "No GitHub release found. Using VS Code Marketplace version as base: $LATEST_VERSION"
+            MARKETPLACE_STABLE=$(get_marketplace_version "$PUBLISHER" "$EXT_NAME" "stable")
+            if [ -n "$MARKETPLACE_STABLE" ]; then
+              LATEST_VERSION="$MARKETPLACE_STABLE"
+              echo "No GitHub release found. Using VS Code Marketplace stable version as base: $LATEST_VERSION"
             else
               LATEST_VERSION="0.0.0"
               echo "No GitHub release or Marketplace version found. Starting from 0.0.0"
@@ -316,9 +335,17 @@ jobs:
             NEXT_NUM=$((EXISTING_COUNT + 1))
             NEW_VERSION="${NEW_VERSION}-${PRERELEASE_ID}.${NEXT_NUM}"
             # VS Code Marketplace requires x.y.z format without pre-release identifiers.
-            # Use the workflow run number as the patch to guarantee a unique, monotonically
-            # increasing version for each prerelease CI run, avoiding "already exists" errors.
-            PACKAGE_VERSION="${MAJOR}.${MINOR}.${GITHUB_RUN_NUMBER}"
+            # Use the absolute latest marketplace version (stable OR prerelease) as the base
+            # and bump its patch by 1. This guarantees each CI push to the PR produces a
+            # version higher than anything already published, avoiding "already exists" errors.
+            MARKETPLACE_LATEST=$(get_marketplace_version "$PUBLISHER" "$EXT_NAME" "any")
+            if [ -n "$MARKETPLACE_LATEST" ]; then
+              IFS='.' read -r MP_MAJ MP_MIN MP_PAT <<< "$MARKETPLACE_LATEST"
+              MP_PAT=$((MP_PAT + 1))
+              PACKAGE_VERSION="${MP_MAJ}.${MP_MIN}.${MP_PAT}"
+              echo "Marketplace latest: $MARKETPLACE_LATEST — using $PACKAGE_VERSION as prerelease package version"
+            fi
+            # If the marketplace query failed, PACKAGE_VERSION keeps the label-bump value
           fi
 
           echo "Calculated new version: $NEW_VERSION (package version: $PACKAGE_VERSION, bump: $BUMP, prerelease: $IS_PRERELEASE)"
