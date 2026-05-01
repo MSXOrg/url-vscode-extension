@@ -1,9 +1,9 @@
 # Remote Folder URL Button
 
-A lightweight VS Code extension that lets you open the Git remote URL for any file or folder:
+A lightweight VS Code extension that adds a context menu action to open the Git remote URL for any file or folder in your default browser:
 
-- **Built-in Explorer**: Right-click a file or folder → **Open Remote URL in Browser**
-- **Custom view**: *Explorer → Remote Folders* shows your folder tree with inline buttons to open remote URLs
+- **Explorer**: Right-click a file or folder → **Open Remote URL in Browser**
+- **Source Control**: Right-click a changed file → **Open Remote URL in Browser**
 
 ## Supported Hosts
 
@@ -13,11 +13,6 @@ A lightweight VS Code extension that lets you open the Git remote URL for any fi
 | GitLab | `-/tree/<branch>/<path>` | `-/blob/<branch>/<path>` |
 | Bitbucket | `src/<branch>/<path>` | `src/<branch>/<path>` |
 | Azure DevOps | `?path=/path&version=GB<branch>` | same |
-
-## Keyboard Shortcuts
-
-- **`Ctrl+Shift+O`** (macOS: `Cmd+Shift+O`) — Open remote URL for the selected item in Explorer
-- **`Ctrl+Alt+O`** (macOS: `Cmd+Alt+O`) — Open remote URL for the active file
 
 ## Development
 
@@ -50,7 +45,6 @@ The publish step requires a `VSCE_PAT` repository secret containing a Visual Stu
 
 ## Settings
 
-- `remoteFolders.exclude` — Folder names to hide in the custom *Remote Folders* view
 - `remoteFolders.preferBranch` — Fallback branch when HEAD cannot be determined
 
 ## License
