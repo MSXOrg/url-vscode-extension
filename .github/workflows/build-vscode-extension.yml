@@ -135,15 +135,41 @@ jobs:
           PATCH_ARR=("${PATCH_ARR[@]// /}")
           IGNORE_ARR=("${IGNORE_ARR[@]// /}")
 
-          # Get latest stable release version (exclude prereleases)
+          # Helper: query the VS Code Marketplace for the latest published version of this extension.
+          # Returns the version string (e.g. "1.2.3") or an empty string if not found.
+          get_marketplace_version() {
+            local publisher="$1"
+            local ext_name="$2"
+            curl -s -X POST \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json; api-version=3.0-preview.1" \
+              --data "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"${publisher}.${ext_name}\"}]}],\"flags\":512}" \
+              "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery" \
+              | jq -r '.results[0].extensions[0].versions[0].version // empty' 2>/dev/null \
+              || echo ""
+          }
+
+          # Get latest stable release version (exclude prereleases).
+          # Falls back to the VS Code Marketplace published version so that repositories
+          # which were published before GitHub releases were introduced still calculate
+          # version bumps relative to the real published baseline, not 0.0.0.
           LATEST_TAG=$(gh release list --exclude-drafts --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease == false)][0].tagName // empty' 2>/dev/null || echo "")
-          if [ -z "$LATEST_TAG" ]; then
-            LATEST_VERSION="0.0.0"
-            echo "No previous stable release found. Starting from 0.0.0"
-          else
+          if [ -n "$LATEST_TAG" ]; then
             # Strip version prefix
             LATEST_VERSION="${LATEST_TAG#$VERSION_PREFIX}"
             echo "Latest stable release: $LATEST_TAG (version: $LATEST_VERSION)"
+          else
+            # No GitHub release — try the VS Code Marketplace
+            PUBLISHER=$(jq -r '.publisher' package.json)
+            EXT_NAME=$(jq -r '.name' package.json)
+            MARKETPLACE_VERSION=$(get_marketplace_version "$PUBLISHER" "$EXT_NAME")
+            if [ -n "$MARKETPLACE_VERSION" ]; then
+              LATEST_VERSION="$MARKETPLACE_VERSION"
+              echo "No GitHub release found. Using VS Code Marketplace version as base: $LATEST_VERSION"
+            else
+              LATEST_VERSION="0.0.0"
+              echo "No GitHub release or Marketplace version found. Starting from 0.0.0"
+            fi
           fi
 
           # Parse semver components
