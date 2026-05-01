@@ -34,8 +34,54 @@ jobs:
           name: vsix
           path: '*.vsix'
 
-  publish:
+  test:
     needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: vsix
+
+      - name: Verify VSIX contents
+        run: |
+          VSIX_FILE=$(ls *.vsix)
+          echo "Verifying VSIX: $VSIX_FILE"
+
+          if [ ! -s "$VSIX_FILE" ]; then
+            echo "::error::VSIX file is missing or empty"
+            exit 1
+          fi
+
+          CONTENTS=$(unzip -l "$VSIX_FILE")
+          echo "$CONTENTS"
+
+          EXPECTED_FILES=(
+            "extension/src/extension.js"
+            "extension/package.json"
+            "extension/src/remoteUrl.js"
+            "extension/resources/"
+          )
+
+          MISSING=()
+          for file in "${EXPECTED_FILES[@]}"; do
+            if ! echo "$CONTENTS" | grep -q "$file"; then
+              MISSING+=("$file")
+            fi
+          done
+
+          if [ ${#MISSING[@]} -ne 0 ]; then
+            echo "::error::VSIX is missing expected files:"
+            for file in "${MISSING[@]}"; do
+              echo "  - $file"
+            done
+            exit 1
+          fi
+
+          echo "All expected files found in VSIX package."
+
+  publish:
+    needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
