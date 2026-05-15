@@ -71,7 +71,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/vscode": "^1.118.0",
+    "@types/vscode": "^1.120.0",
     "@vscode/vsce": "^3.9.1",
     "eslint": "^10.3.0"
   }
