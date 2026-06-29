@@ -1,0 +1,28 @@
+# Release configuration — consumed by .github/workflows/release.yml
+# See the AI-Platform Release Management spec §8 (path filtering) and §11
+# (configuration surface).
+
+# Which branches trigger releases, and what kind. A push to a stable branch
+# produces a stable release; pre-releases are opt-in via a PR label.
+release-branches:
+  - branch: main
+    release-type: stable
+
+# A push to a release branch only produces a release when it changes something
+# that ends up in the artifact (the VSIX). Include/exclude globs; a leading '!'
+# excludes, and excludes take precedence. For a VS Code extension the README,
+# LICENSE, and icon DO ship in the package, so they are artifact-affecting.
+release-paths:
+  - "src/**"            # extension source
+  - "package.json"      # manifest (engines, contributes, version)
+  - "package-lock.json" # dependency lock — changes what ships
+  - "README.md"         # rendered as the Marketplace description
+  - "LICENSE"           # bundled in the VSIX
+  - "*.png"             # icon / imagery bundled in the VSIX
+  - ".vscodeignore"     # governs what is included in the VSIX
+  - "!docs/**"          # documentation-only changes never release
+  - "!.github/**"       # CI / workflow / script changes never release
+  - "!**/*.Tests.ps1"   # test files never ship
+
+# Delete a branch's pre-releases (tags, GitHub Releases) when its PR closes.
+prerelease-cleanup: true
