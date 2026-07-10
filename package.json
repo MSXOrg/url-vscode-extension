@@ -73,6 +73,6 @@
     "@eslint/js": "^10.0.1",
     "@types/vscode": "^1.118.0",
     "@vscode/vsce": "^3.9.1",
-    "eslint": "^10.3.0"
+    "eslint": "^10.6.0"
   }
 }
