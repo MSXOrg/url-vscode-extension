@@ -22,7 +22,7 @@ if (-not $env:HEAD_REF) { throw 'HEAD_REF environment variable is required.' }
 $config = Import-ReleaseConfig
 if (-not $config.PrereleaseCleanup) {
     Write-Host 'Pre-release cleanup is disabled in release.config.yml; nothing to do.'
-    return
+    exit 0
 }
 
 $id = Get-PrereleaseIdentifier -BranchName $env:HEAD_REF

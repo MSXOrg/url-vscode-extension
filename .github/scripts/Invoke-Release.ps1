@@ -24,7 +24,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot/CI.psm1" -Force
 
 foreach ($required in 'EVENT_NAME', 'VERSION', 'TAG', 'TARGET_SHA', 'IS_PRERELEASE', 'VSIX_FILE', 'GH_TOKEN') {
-    if (-not (Get-Item "env:$required" -ErrorAction SilentlyContinue)) {
+    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($required))) {
         throw "$required environment variable is required."
     }
 }
