@@ -2,12 +2,6 @@
 # See the AI-Platform Release Management spec §8 (path filtering) and §11
 # (configuration surface).
 
-# Which branches trigger releases, and what kind. A push to a stable branch
-# produces a stable release; pre-releases are opt-in via a PR label.
-release-branches:
-  - branch: main
-    release-type: stable
-
 # A push to a release branch only produces a release when it changes something
 # that ends up in the artifact (the VSIX). Include/exclude globs; a leading '!'
 # excludes, and excludes take precedence. For a VS Code extension the README,

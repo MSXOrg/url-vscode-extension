@@ -90,8 +90,8 @@ function Import-ReleaseConfig {
     .DESCRIPTION
         Parses .github/release.config.yml into an object using the
         powershell-yaml module (which the workflow installs). Returns a
-        hashtable with normalised keys: ReleaseBranches, ReleasePaths,
-        PrereleaseCleanup. Missing keys fall back to sensible defaults.
+        hashtable with normalised keys: ReleasePaths and PrereleaseCleanup.
+        Missing keys fall back to sensible defaults.
     .PARAMETER Path
         Path to the release config file.
     .EXAMPLE
@@ -105,7 +105,6 @@ function Import-ReleaseConfig {
     )
 
     $result = @{
-        ReleaseBranches   = @(@{ branch = 'main'; 'release-type' = 'stable' })
         ReleasePaths      = @()
         PrereleaseCleanup = $true
     }
@@ -118,7 +117,6 @@ function Import-ReleaseConfig {
     Import-Module powershell-yaml -ErrorAction Stop
     $raw = ConvertFrom-Yaml (Get-Content -Path $Path -Raw)
 
-    if ($raw.ContainsKey('release-branches')) { $result.ReleaseBranches = @($raw['release-branches']) }
     if ($raw.ContainsKey('release-paths')) { $result.ReleasePaths = @($raw['release-paths']) }
     if ($raw.ContainsKey('prerelease-cleanup')) { $result.PrereleaseCleanup = [bool]$raw['prerelease-cleanup'] }
 
