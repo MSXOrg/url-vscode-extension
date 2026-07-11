@@ -770,7 +770,7 @@ function New-Vsix {
     if ($PreRelease) { $npxArgs += '--pre-release' }
 
     Write-Host "Packaging VSIX: $vsixName …" -ForegroundColor Cyan
-    npx @npxArgs | Write-Host   # log vsce output; keep it out of the return value
+    npx @npxArgs | Out-Host   # log vsce output; keep it out of the return value
     if ($LASTEXITCODE -ne 0) { throw 'VSIX packaging failed.' }
 
     return $vsixName
@@ -848,7 +848,7 @@ function Publish-Marketplace {
     if ($PreRelease) { $npxArgs += '--pre-release' }
 
     Write-Host "Publishing $VsixFile to the VS Code Marketplace …" -ForegroundColor Cyan
-    npx @npxArgs | Write-Host   # log vsce output; do not emit it from the function
+    npx @npxArgs | Out-Host   # log vsce output; do not emit it from the function
     if ($LASTEXITCODE -ne 0) { throw 'vsce publish failed.' }
 
     Write-Host '✅ Published to the VS Code Marketplace.' -ForegroundColor Green
@@ -912,7 +912,7 @@ function Publish-GitHubRelease {
     }
     if ($IsPrerelease) { $ghArgs += '--prerelease' }
 
-    gh @ghArgs | Write-Host
+    gh @ghArgs | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed.' }
 
     $releaseUrl = gh release view $Tag --json url --jq '.url'
@@ -976,7 +976,7 @@ code --install-extension $ExtensionId$preFlag
 ``````
 "@
 
-    gh pr comment $PullRequestNumber --body $comment 2>$null | Write-Host
+    gh pr comment $PullRequestNumber --body $comment 2>$null | Out-Host
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Could not comment on PR #$PullRequestNumber (continuing)."
     }
