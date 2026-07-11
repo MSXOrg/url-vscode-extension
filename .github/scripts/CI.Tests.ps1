@@ -84,6 +84,11 @@ Describe 'ConvertTo-GlobRegex' {
         'src/a.js' | Should -Match (ConvertTo-GlobRegex -Glob 'src/**')
         'src/deep/a.js' | Should -Match (ConvertTo-GlobRegex -Glob 'src/**')
     }
+    It 'treats **/ as zero or more directories with a path boundary' {
+        'src/a.js' | Should -Match (ConvertTo-GlobRegex -Glob 'src/**/a.js')
+        'src/deep/a.js' | Should -Match (ConvertTo-GlobRegex -Glob 'src/**/a.js')
+        'src/deepa.js' | Should -Not -Match (ConvertTo-GlobRegex -Glob 'src/**/a.js')
+    }
     It 'matches a literal path' {
         'package.json' | Should -Match (ConvertTo-GlobRegex -Glob 'package.json')
         'src/package.json' | Should -Not -Match (ConvertTo-GlobRegex -Glob 'package.json')

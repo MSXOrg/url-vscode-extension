@@ -311,11 +311,17 @@ function ConvertTo-GlobRegex {
         $c = $Glob[$i]
         if ($c -eq '*') {
             if (($i + 1) -lt $Glob.Length -and $Glob[$i + 1] -eq '*') {
-                # '**' matches across path separators.
-                [void]$sb.Append('.*')
                 $i++
-                # Swallow a following '/' so 'src/**' also matches 'src/a/b'.
-                if (($i + 1) -lt $Glob.Length -and $Glob[$i + 1] -eq '/') { $i++ }
+                if (($i + 1) -lt $Glob.Length -and $Glob[$i + 1] -eq '/') {
+                    # '**/' matches zero or more directory segments while keeping
+                    # the '/' boundary, so 'src/**/a.js' does not match
+                    # 'src/deepa.js'.
+                    [void]$sb.Append('(?:.*/)?')
+                    $i++
+                } else {
+                    # '**' matches across path separators (e.g. 'src/**').
+                    [void]$sb.Append('.*')
+                }
             } else {
                 [void]$sb.Append('[^/]*')
             }
