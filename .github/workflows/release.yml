@@ -70,6 +70,7 @@ jobs:
       - name: Install PowerShell dependencies
         shell: pwsh
         run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
             Install-Module -Name powershell-yaml -Force -Scope CurrentUser -Repository PSGallery
           }
@@ -220,7 +221,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   publish:
     name: Publish to Marketplace
-    needs: [find-version, build, test]
+    needs: [find-version, build, test, validate-scripts]
     if: needs.find-version.outputs.should-release == 'true'
     runs-on: ubuntu-24.04
     permissions:
@@ -254,7 +255,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   release:
     name: Create GitHub Release
-    needs: [find-version, build, test, lint, publish]
+    needs: [find-version, build, test, lint, publish, validate-scripts]
     if: needs.find-version.outputs.should-release == 'true'
     runs-on: ubuntu-24.04
     permissions:
@@ -308,6 +309,7 @@ jobs:
       - name: Install PowerShell dependencies
         shell: pwsh
         run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
           if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
             Install-Module -Name powershell-yaml -Force -Scope CurrentUser -Repository PSGallery
           }

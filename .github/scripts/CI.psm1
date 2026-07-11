@@ -698,8 +698,11 @@ function Set-PackageMetadata {
     [CmdletBinding()]
     param()
 
-    $info = gh repo view --json url,licenseInfo 2>$null | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or -not $info) {
+    $raw = gh repo view --json url,licenseInfo 2>$null
+    $info = if ($LASTEXITCODE -eq 0 -and $raw) {
+        try { $raw | ConvertFrom-Json } catch { $null }
+    } else { $null }
+    if (-not $info) {
         Write-Host 'Could not read repo metadata; leaving package.json fields as-is.'
         return
     }
@@ -1004,10 +1007,14 @@ function Remove-BranchPrerelease {
         return
     }
 
-    $token = "-$Identifier."
+    # Match only tags of the documented form v<base>-<identifier>.<N>. The base
+    # version ends in a digit, so anchor on <digit>-<identifier>.<counter> at the
+    # end of the tag; a bare substring check would also delete e.g. 'add-widgets'
+    # pre-releases when cleaning up the 'widgets' branch.
+    $pattern = "\d-$([regex]::Escape($Identifier))\.\d+$"
     $removed = 0
     foreach ($t in $tags) {
-        if (-not $t -or ($t -notlike "*$token*")) { continue }
+        if (-not $t -or ($t -notmatch $pattern)) { continue }
         if ($PSCmdlet.ShouldProcess($t, 'Delete pre-release')) {
             gh release delete $t --cleanup-tag --yes 2>$null
             if ($LASTEXITCODE -eq 0) {
