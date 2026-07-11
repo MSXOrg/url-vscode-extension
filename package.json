@@ -5,7 +5,7 @@
   "version": "0.0.0",
   "publisher": "MariusStorhaug",
   "engines": {
-    "vscode": "^1.118.0"
+    "vscode": "^1.125.0"
   },
   "categories": [
     "Other"
@@ -71,7 +71,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/vscode": "^1.118.0",
+    "@types/vscode": "^1.125.0",
     "@vscode/vsce": "^3.9.2",
     "eslint": "^10.6.0"
   }
