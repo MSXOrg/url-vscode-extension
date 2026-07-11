@@ -221,7 +221,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   publish:
     name: Publish to Marketplace
-    needs: [find-version, build, test, validate-scripts]
+    needs: [find-version, build, test, lint, validate-scripts]
     if: needs.find-version.outputs.should-release == 'true'
     runs-on: ubuntu-24.04
     permissions:
@@ -236,6 +236,10 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Restore VSIX
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
