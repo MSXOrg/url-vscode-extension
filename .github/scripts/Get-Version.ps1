@@ -33,6 +33,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot/CI.psm1" -Force
 
 if (-not $env:EVENT_NAME) { throw 'EVENT_NAME environment variable is required.' }
+if (-not $env:GH_TOKEN) { throw 'GH_TOKEN environment variable is required.' }
 $eventName = $env:EVENT_NAME
 
 $pkg = Get-PackageInfo

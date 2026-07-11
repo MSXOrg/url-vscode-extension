@@ -18,6 +18,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot/CI.psm1" -Force
 
 if (-not $env:HEAD_REF) { throw 'HEAD_REF environment variable is required.' }
+if (-not $env:GH_TOKEN) { throw 'GH_TOKEN environment variable is required.' }
 
 $config = Import-ReleaseConfig
 if (-not $config.PrereleaseCleanup) {

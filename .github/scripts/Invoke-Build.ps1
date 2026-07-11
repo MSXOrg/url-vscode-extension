@@ -21,6 +21,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot/CI.psm1" -Force
 
 if (-not $env:PACKAGE_VERSION) { throw 'PACKAGE_VERSION environment variable is required.' }
+if (-not $env:GH_TOKEN) { throw 'GH_TOKEN environment variable is required.' }
 $version = $env:PACKAGE_VERSION
 $isPrerelease = $env:IS_PRERELEASE -eq 'true'
 
