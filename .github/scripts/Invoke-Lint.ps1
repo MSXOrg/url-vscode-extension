@@ -18,3 +18,5 @@ npm run lint --if-present
 if ($LASTEXITCODE -ne 0) { throw 'Lint failed.' }
 
 Write-Host '✅ Lint passed.' -ForegroundColor Green
+
+exit 0  # success; don't let a tolerated tool's non-zero $LASTEXITCODE fail the step

@@ -18,6 +18,8 @@
     comment-based help on every public function.
 #>
 
+$ErrorActionPreference = 'Stop'
+
 # ──────────────────────────────────────────────────────────────────────────────
 # GitHub Actions output helpers
 # ──────────────────────────────────────────────────────────────────────────────
@@ -514,7 +516,7 @@ function Get-LatestStableVersion {
         [string] $Baseline = '0.0.0'
     )
 
-    $tag = gh release list --exclude-drafts --json tagName, isPrerelease `
+    $tag = gh release list --exclude-drafts --json tagName,isPrerelease `
         --jq '[.[] | select(.isPrerelease == false)][0].tagName // empty' 2>$null
     if ($LASTEXITCODE -eq 0 -and $tag) {
         return ($tag -replace "^$([regex]::Escape($VersionPrefix))", '')
@@ -696,7 +698,7 @@ function Set-PackageMetadata {
     [CmdletBinding()]
     param()
 
-    $info = gh repo view --json url, licenseInfo 2>$null | ConvertFrom-Json
+    $info = gh repo view --json url,licenseInfo 2>$null | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or -not $info) {
         Write-Host 'Could not read repo metadata; leaving package.json fields as-is.'
         return
@@ -995,7 +997,7 @@ function Remove-BranchPrerelease {
         [string] $Identifier
     )
 
-    $tags = gh release list --json tagName, isPrerelease `
+    $tags = gh release list --json tagName,isPrerelease `
         --jq ".[] | select(.isPrerelease == true) | .tagName" 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Could not list releases; nothing cleaned up.'

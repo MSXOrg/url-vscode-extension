@@ -24,3 +24,5 @@ $vsix = if ($env:VSIX_FILE) {
 if (-not $vsix) { throw 'No VSIX file found to verify.' }
 
 Test-VsixPackage -VsixFile $vsix
+
+exit 0  # success; don't let a tolerated tool's non-zero $LASTEXITCODE fail the step

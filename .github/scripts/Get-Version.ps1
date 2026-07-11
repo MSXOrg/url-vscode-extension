@@ -148,3 +148,5 @@ Write-GitHubOutput -Name 'pr-number' -Value $prNumber
 if ($shouldRelease) {
     Write-GitHubNotice -Message "Working on $tag (prerelease=$isPrerelease)"
 }
+
+exit 0  # success; don't let a tolerated tool's non-zero $LASTEXITCODE fail the step

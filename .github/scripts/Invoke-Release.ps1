@@ -51,7 +51,7 @@ switch ($eventName) {
     }
     'push' {
         if ($prNumber) {
-            $pr = gh pr view $prNumber --json title, body | ConvertFrom-Json
+            $pr = gh pr view $prNumber --json title,body | ConvertFrom-Json
             $title = $pr.title
             $body = $pr.body
         } else {
@@ -83,3 +83,5 @@ Add-PullRequestReleaseComment -PullRequestNumber $prNumber -ReleaseUrl $releaseU
 $kind = if ($isPrerelease) { 'prerelease' } else { 'release' }
 Write-GitHubNotice -Message "Published $kind ${tag}: $releaseUrl"
 Write-Host "✅ Release ($kind) complete." -ForegroundColor Green
+
+exit 0  # success; don't let a tolerated tool's non-zero $LASTEXITCODE fail the step

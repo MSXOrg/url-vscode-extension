@@ -92,25 +92,25 @@ Describe 'ConvertTo-GlobRegex' {
 
 Describe 'Test-ArtifactAffectingChange' {
     BeforeAll {
-        $rules = @('src/**', 'package.json', 'README.md', '!docs/**', '!.github/**')
+        $script:rules = @('src/**', 'package.json', 'README.md', '!docs/**', '!.github/**')
     }
 
     It 'treats an unknown change set as affecting' {
-        Test-ArtifactAffectingChange -ChangedFile $null -Rule $rules | Should -BeTrue
+        Test-ArtifactAffectingChange -ChangedFile $null -Rule $script:rules | Should -BeTrue
     }
     It 'treats an empty change set as not affecting' {
-        Test-ArtifactAffectingChange -ChangedFile @() -Rule $rules | Should -BeFalse
+        Test-ArtifactAffectingChange -ChangedFile @() -Rule $script:rules | Should -BeFalse
     }
     It 'is affecting when a source file changes' {
-        Test-ArtifactAffectingChange -ChangedFile @('src/extension.js') -Rule $rules | Should -BeTrue
+        Test-ArtifactAffectingChange -ChangedFile @('src/extension.js') -Rule $script:rules | Should -BeTrue
     }
     It 'is not affecting for docs-only changes' {
-        Test-ArtifactAffectingChange -ChangedFile @('docs/guide.md') -Rule $rules | Should -BeFalse
+        Test-ArtifactAffectingChange -ChangedFile @('docs/guide.md') -Rule $script:rules | Should -BeFalse
     }
     It 'is not affecting for workflow-only changes' {
-        Test-ArtifactAffectingChange -ChangedFile @('.github/workflows/release.yml') -Rule $rules | Should -BeFalse
+        Test-ArtifactAffectingChange -ChangedFile @('.github/workflows/release.yml') -Rule $script:rules | Should -BeFalse
     }
     It 'is affecting when at least one file qualifies' {
-        Test-ArtifactAffectingChange -ChangedFile @('docs/guide.md', 'src/extension.js') -Rule $rules | Should -BeTrue
+        Test-ArtifactAffectingChange -ChangedFile @('docs/guide.md', 'src/extension.js') -Rule $script:rules | Should -BeTrue
     }
 }

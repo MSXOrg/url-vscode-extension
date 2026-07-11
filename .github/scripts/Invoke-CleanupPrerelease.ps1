@@ -28,3 +28,5 @@ if (-not $config.PrereleaseCleanup) {
 $id = Get-PrereleaseIdentifier -BranchName $env:HEAD_REF
 Write-Host "Cleaning up pre-releases for branch identifier: $id"
 Remove-BranchPrerelease -Identifier $id
+
+exit 0  # success; don't let a tolerated tool's non-zero $LASTEXITCODE fail the step

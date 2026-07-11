@@ -31,3 +31,5 @@ $vsix = if ($isPrerelease) { New-Vsix -Version $version -PreRelease } else { New
 Write-GitHubOutput -Name 'vsix' -Value $vsix
 
 Write-Host "✅ Build complete. Artifact: $vsix" -ForegroundColor Green
+
+exit 0  # success; don't let a tolerated tool's non-zero $LASTEXITCODE fail the step
